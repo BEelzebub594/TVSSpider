@@ -298,9 +298,61 @@ class TVSSpider(PluginBase):
                     img_element = item.select_one('.module-item-pic img')
                     img_url = img_element.get('data-src') if img_element else None
                     
-                    # 提取剧情简介
-                    plot_element = item.select_one('.video-info-item')
-                    plot = plot_element.text.strip() if plot_element else "无剧情简介"
+                    # 提取剧情简介 - 精确定位"剧情："后面的内容
+                    plot = "无剧情简介"
+                    try:
+                        # 查找包含"剧情："的元素
+                        plot_title_elements = item.select('.video-info-itemtitle')
+                        plot_title_element = None
+                        for title_elem in plot_title_elements:
+                            if "剧情：" in title_elem.text:
+                                plot_title_element = title_elem
+                                break
+                        
+                        if plot_title_element:
+                            # 找到剧情标题所在的父容器
+                            plot_container = plot_title_element.parent
+                            
+                            # 从父容器中查找剧情内容
+                            plot_element = plot_container.select_one('.video-info-item')
+                            
+                            if plot_element:
+                                # 获取文本并清理
+                                plot = plot_element.text.strip()
+                                logger.info(f"[TVSSpider] 通过剧情标题找到剧情: {plot[:30]}..." if len(plot) > 30 else f"[TVSSpider] 通过剧情标题找到剧情: {plot}")
+                        else:
+                            # 直接查找所有video-info-items元素
+                            info_items = item.select('.video-info-items')
+                            
+                            for info_item in info_items:
+                                # 检查是否包含"剧情："文本
+                                if "剧情：" in info_item.text:
+                                    # 尝试找到剧情内容元素
+                                    plot_element = info_item.select_one('.video-info-item')
+                                    if plot_element:
+                                        plot = plot_element.text.strip()
+                                        logger.info(f"[TVSSpider] 通过文本匹配找到剧情: {plot[:30]}..." if len(plot) > 30 else f"[TVSSpider] 通过文本匹配找到剧情: {plot}")
+                                    else:
+                                        # 如果没有找到专门的元素，则提取整个文本并去除"剧情："前缀
+                                        full_text = info_item.text.strip()
+                                        if "剧情：" in full_text:
+                                            plot = full_text.split("剧情：", 1)[1].strip()
+                                            logger.info(f"[TVSSpider] 通过分割文本找到剧情: {plot[:30]}..." if len(plot) > 30 else f"[TVSSpider] 通过分割文本找到剧情: {plot}")
+                        
+                        # 清理剧情文本
+                        if plot and plot != "无剧情简介":
+                            # 去除开头的全角空格(　)和其他空白字符
+                            plot = re.sub(r'^[\s　]+', '', plot)
+                            # 替换多个空格为单个空格
+                            plot = re.sub(r'\s+', ' ', plot)
+                            # 如果简介超过一定长度，截断并添加省略号
+                            if len(plot) > 200:
+                                plot = plot[:197] + "..."
+                    except Exception as e:
+                        logger.error(f"[TVSSpider] 提取剧情简介时出错: {str(e)}")
+                        plot = "无剧情简介"
+                    
+                    logger.info(f"[TVSSpider] 最终提取到的剧情简介: {plot[:50]}..." if len(plot) > 50 else f"[TVSSpider] 最终提取到的剧情简介: {plot}")
                     
                     # 提取主演信息
                     actors_elements = item.select('.video-info-actor a')
@@ -394,10 +446,10 @@ class TVSSpider(PluginBase):
             # 添加年份和地区
             output += f"📆 年份: {result['年份']} | 🌍 地区: {result['地区']}\n"
             
-            # 添加剧情简介（如果不太长）
+            # 添加剧情简介（不限制长度）
             plot = result['剧情简介']
-            if len(plot) <= 100:  # 剧情简介不超过100字时才显示
-                output += f"📝 简介: {plot}\n"
+            if plot and plot != "无剧情简介":
+                output += f"\n📝 简介: {plot}\n"
         else:
             output = f"【{title}】\n\n"
             output += f"播放链接: {result['播放链接']}\n\n"
@@ -411,10 +463,10 @@ class TVSSpider(PluginBase):
             # 添加年份和地区
             output += f"年份: {result['年份']} | 地区: {result['地区']}\n"
             
-            # 添加剧情简介（如果不太长）
+            # 添加剧情简介（不限制长度）
             plot = result['剧情简介']
-            if len(plot) <= 100:  # 剧情简介不超过100字时才显示
-                output += f"简介: {plot}\n"
+            if plot and plot != "无剧情简介":
+                output += f"\n简介: {plot}\n"
         
         return output.strip()
 
@@ -459,6 +511,105 @@ if __name__ == "__main__":
             msg_text = input("\n请输入消息(输入q退出): ")
             if msg_text.lower() == 'q':
                 break
+                
+            # 处理URL测试 (格式: URL http://xxx)
+            if msg_text.lower().startswith("url "):
+                test_url = msg_text[4:].strip()
+                if not test_url:
+                    print("\n请输入有效的URL")
+                    continue
+                    
+                print(f"\n正在测试URL: {test_url}")
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(test_url, headers=plugin.headers, timeout=plugin.timeout) as response:
+                            if response.status != 200:
+                                print(f"\n请求失败，状态码: {response.status}")
+                                continue
+                                
+                            html = await response.text()
+                            
+                    # 解析HTML
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    # 尝试提取剧情描述
+                    print("\n尝试提取剧情描述...")
+                    plot = "无剧情简介"
+                    
+                    # 方法1: 查找包含"剧情："的元素
+                    print("\n方法1: 查找包含'剧情：'的标题元素")
+                    plot_title_elements = soup.select('.video-info-itemtitle')
+                    plot_title_element = None
+                    for title_elem in plot_title_elements:
+                        if "剧情：" in title_elem.text:
+                            plot_title_element = title_elem
+                            print(f"找到剧情标题元素: {title_elem.text}")
+                            break
+                    
+                    if plot_title_element:
+                        # 找到剧情标题所在的父容器
+                        plot_container = plot_title_element.parent
+                        print(f"父容器HTML: {plot_container}")
+                        
+                        # 从父容器中查找剧情内容
+                        plot_element = plot_container.select_one('.video-info-item')
+                        
+                        if plot_element:
+                            # 获取文本并清理
+                            plot = plot_element.text.strip()
+                            print(f"找到剧情内容: {plot[:100]}...")
+                            
+                            # 清理全角空格
+                            cleaned_plot = re.sub(r'^[\s　]+', '', plot)
+                            cleaned_plot = re.sub(r'\s+', ' ', cleaned_plot)
+                            print(f"清理后的剧情: {cleaned_plot[:100]}...")
+                    else:
+                        print("未找到剧情标题元素")
+                        
+                        # 方法2: 直接查找所有video-info-items元素
+                        print("\n方法2: 查找包含'剧情：'的info-items元素")
+                        info_items = soup.select('.video-info-items')
+                        
+                        for i, info_item in enumerate(info_items):
+                            print(f"检查第{i+1}个info-items元素: {info_item.text[:50]}...")
+                            # 检查是否包含"剧情："文本
+                            if "剧情：" in info_item.text:
+                                print(f"找到包含'剧情：'的元素: {info_item.text[:100]}...")
+                                # 尝试找到剧情内容元素
+                                plot_element = info_item.select_one('.video-info-item')
+                                if plot_element:
+                                    plot = plot_element.text.strip()
+                                    print(f"找到剧情内容元素: {plot[:100]}...")
+                                    
+                                    # 清理全角空格
+                                    cleaned_plot = re.sub(r'^[\s　]+', '', plot)
+                                    cleaned_plot = re.sub(r'\s+', ' ', cleaned_plot)
+                                    print(f"清理后的剧情: {cleaned_plot[:100]}...")
+                                else:
+                                    # 如果没有找到专门的元素，则提取整个文本并去除"剧情："前缀
+                                    full_text = info_item.text.strip()
+                                    if "剧情：" in full_text:
+                                        plot = full_text.split("剧情：", 1)[1].strip()
+                                        print(f"通过分割文本找到剧情: {plot[:100]}...")
+                                        
+                                        # 清理全角空格
+                                        cleaned_plot = re.sub(r'^[\s　]+', '', plot)
+                                        cleaned_plot = re.sub(r'\s+', ' ', cleaned_plot)
+                                        print(f"清理后的剧情: {cleaned_plot[:100]}...")
+                    
+                    # 展示相关HTML结构
+                    print("\n相关HTML结构预览:")
+                    video_info_main = soup.select_one('.video-info-main')
+                    if video_info_main:
+                        print(video_info_main.prettify())
+                    else:
+                        print("未找到.video-info-main元素")
+                    
+                except Exception as e:
+                    print(f"\n测试URL时出错: {str(e)}")
+                    traceback.print_exc()
+                
+                continue
                 
             # 处理获取详情命令
             if msg_text.startswith(f"{plugin.command}#"):
@@ -518,7 +669,7 @@ if __name__ == "__main__":
                     print("\n请输入要搜索的影视剧名称")
             
             else:
-                print("\n未识别的命令。使用'TVS 关键词'进行搜索，使用'TVS# 编号'获取详情。")
+                print("\n未识别的命令。使用'TVS 关键词'进行搜索，使用'TVS# 编号'获取详情，或使用'URL 网址'测试剧情提取")
     
     try:
         asyncio.run(test_search())
