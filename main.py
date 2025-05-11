@@ -435,7 +435,7 @@ class TVSSpider(PluginBase):
         # 根据设置添加emoji前缀
         if self.enable_emoji:
             output = f"🎬 【{title}】\n\n"
-            output += f"📺 播放链接: {result['播放链接']}\n\n"
+            output += f"📺 播放链接: https://hadis898.github.io/qqfh/api/?url={result['播放链接']}\n\n"
             
             # 添加主演信息
             actors = "、".join(result["主演"][:3])  # 最多显示3个演员
@@ -452,7 +452,7 @@ class TVSSpider(PluginBase):
                 output += f"\n📝 简介: {plot}\n"
         else:
             output = f"【{title}】\n\n"
-            output += f"播放链接: {result['播放链接']}\n\n"
+            output += f"播放链接: https://hadis898.github.io/qqfh/api/?url={result['播放链接']}\n\n"
             
             # 添加主演信息
             actors = "、".join(result["主演"][:3])
