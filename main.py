@@ -16,7 +16,7 @@ from WechatAPI import WechatAPIClient
 class TVSSpider(PluginBase):
     description = "TVS1网站视频搜索插件"
     author = "BEelzebub"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def __init__(self):
         super().__init__()
@@ -133,14 +133,27 @@ class TVSSpider(PluginBase):
         chat_id = message.get("FromWxid", "")
         sender = message.get("SenderWxid", "")
         
-        # 检查是否为群消息，如果不是则忽略
+        """# 检查是否为群消息，如果不是则忽略
         is_group = message.get("IsGroup", False)
         if not is_group:
             return True
             
         # 检查群组白名单
         if self.whitelist_groups and chat_id not in self.whitelist_groups:
-            return True
+            return True"""
+        # 检查是否为群消息，若非群消息则继续执行后续逻辑
+        is_group = message.get("IsGroup", False)
+        if not is_group:
+        # 非群消息不拦截，继续执行
+            pass
+        else:
+        # 群消息需检查白名单
+            if self.whitelist_groups and chat_id in self.whitelist_groups:
+        # 在白名单内，继续执行
+                pass
+            else:
+        # 不在白名单内，忽略当前请求
+                return True
             
         # 定义用户缓存键（群ID+发送者ID）
         cache_key = f"{chat_id}_{sender}"
